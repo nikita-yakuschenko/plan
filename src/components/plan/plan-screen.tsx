@@ -1,18 +1,25 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import {
+  flexRender,
+  getCoreRowModel,
+  getPaginationRowModel,
+  useReactTable,
+  type ColumnDef,
+} from "@tanstack/react-table"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
 import {
   Table,
@@ -22,15 +29,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from "@/components/ui/pagination"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useAutoPageSize } from "@/hooks/useAutoPageSize"
+import { writeReturnContext } from "@/lib/return-context-storage"
 import { cn } from "@/lib/utils"
 import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconChevronsLeft,
+  IconChevronsRight,
   IconCircleCheckFilled,
   IconCircleMinus,
   IconProgress,
 } from "@tabler/icons-react"
 import {
   computePlanKpi,
+  formatHouseKitFullLabel,
   INITIAL_PLAN_FILTERS,
   PLAN_TASKS,
   toCalendarEvents,
@@ -106,7 +125,7 @@ function projectBadgeClass(projectName: string): string {
   return "border border-zinc-200/70 bg-zinc-50/70 text-zinc-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
 }
 
-/** Цветовая маркировка этапа (производство / монтаж / отгрузка и т.д.) */
+/** Цветовая маркировка этапа (производство / монтаж / готов к отгрузке / фундамент и т.д.) */
 function stageBadgeClass(stage: string): string {
   if (stage === "Производство")
     return "border border-blue-200/70 bg-blue-50/70 text-blue-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
@@ -114,6 +133,8 @@ function stageBadgeClass(stage: string): string {
     return "border border-emerald-200/70 bg-emerald-50/70 text-emerald-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
   if (stage === "Готов к отгрузке")
     return "border border-amber-200/70 bg-amber-50/70 text-amber-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
+  if (stage === "Фундамент")
+    return "border border-orange-200/70 bg-orange-50/70 text-orange-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
   return "border border-zinc-200/70 bg-zinc-50/70 text-zinc-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
 }
 
@@ -139,12 +160,6 @@ function PlanStatusPill({ status, className }: { status: PlanStatus; className?:
       <span className="min-w-0 truncate">{label}</span>
     </span>
   )
-}
-
-function riskBadgeClass(risk: PlanTask["riskLevel"]): string {
-  if (risk === "critical") return "bg-red-100 text-red-800"
-  if (risk === "risk") return "bg-orange-100 text-orange-800"
-  return "bg-zinc-100 text-zinc-800"
 }
 
 function isoToRuDate(value: string): string {
@@ -234,6 +249,19 @@ function groupEventsByDate(items: ReturnType<typeof toCalendarEvents>) {
   }, {})
 }
 
+/** Номер страницы в URL — с 1; в TanStack pageIndex с 0 */
+function readPageIndexFromSearchParams(sp: { get: (key: string) => string | null }): number {
+  const raw = sp.get("page")
+  if (!raw) return 0
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 1) return 0
+  return n - 1
+}
+
+function readViewFromSearchParams(sp: { get: (key: string) => string | null }): ViewMode {
+  return sp.get("view") === "calendar" ? "calendar" : "table"
+}
+
 /** Фиксированные доли ширины колонок (table-fixed + colgroup), чтобы при смене фильтров не «прыгала» вёрстка */
 function PlanTableColgroup() {
   return (
@@ -253,13 +281,27 @@ function PlanTableColgroup() {
 
 export function PlanScreen() {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const tableContainerRef = React.useRef<HTMLDivElement>(null)
+  const firstRowRef = React.useRef<HTMLTableRowElement>(null)
+  const [pagination, setPagination] = React.useState(() => ({
+    pageIndex: readPageIndexFromSearchParams(searchParams),
+    pageSize: 10,
+  }))
   const [filters, setFilters] = React.useState<PlanFilters>(INITIAL_PLAN_FILTERS)
-  const [view, setView] = React.useState<ViewMode>("table")
+  const [view, setView] = React.useState<ViewMode>(() =>
+    readViewFromSearchParams(searchParams)
+  )
   const tasks = PLAN_TASKS
-  const [selectedTaskId, setSelectedTaskId] = React.useState<string | null>(() => {
-    const initial = sortTasks(PLAN_TASKS, INITIAL_PLAN_FILTERS)
-    return initial[0]?.id ?? null
-  })
+
+  const openObject = React.useCallback(
+    (serialNumber: string) => {
+      writeReturnContext(pathname, searchParams.toString(), serialNumber)
+      router.push(`/object/${serialNumber}`)
+    },
+    [router, searchParams, pathname]
+  )
 
   const owners = React.useMemo(
     () => Array.from(new Set(tasks.map((item) => item.owner))).sort(),
@@ -270,21 +312,221 @@ export function PlanScreen() {
     () => sortTasks(filterTasks(tasks, filters), filters),
     [tasks, filters]
   )
+
+  const planColumns = React.useMemo<ColumnDef<PlanTask>[]>(
+    () => [
+      {
+        id: "home",
+        header: "Дом",
+        cell: ({ row }) => {
+          const item = row.original
+          return (
+            <>
+              <div className="truncate whitespace-nowrap">{`${item.contractNumber} - ${item.serialNumber} дом`}</div>
+              <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden">
+                <Badge
+                  title={formatHouseKitFullLabel(item.houseKitType)}
+                  className={cn(
+                    "h-6 px-2 font-mono tracking-tight",
+                    houseKitBadgeClass(item.houseKitType)
+                  )}
+                >
+                  {HOUSE_KIT_LABEL[item.houseKitType]}
+                </Badge>
+                <Badge
+                  className={cn(
+                    "h-6 min-w-0 max-w-42 truncate px-2 font-mono tracking-tight",
+                    projectBadgeClass(item.projectName)
+                  )}
+                >
+                  {item.projectName}
+                </Badge>
+              </div>
+            </>
+          )
+        },
+      },
+      {
+        id: "stage",
+        header: "Этап",
+        cell: ({ row }) => (
+          <Badge
+            className={cn(
+              "h-6 min-w-0 max-w-full shrink justify-start truncate px-2 text-xs font-medium",
+              stageBadgeClass(row.original.stage)
+            )}
+          >
+            {row.original.stage}
+          </Badge>
+        ),
+      },
+      {
+        id: "status",
+        header: "Статус",
+        cell: ({ row }) => <PlanStatusPill status={row.original.status} />,
+      },
+      {
+        id: "planDate",
+        header: "План",
+        cell: ({ row }) => isoToRuDate(row.original.planDate),
+      },
+      {
+        id: "factDate",
+        header: "Факт",
+        cell: ({ row }) =>
+          row.original.factDate ? isoToRuDate(row.original.factDate) : "-",
+      },
+      {
+        id: "forecastDate",
+        header: "Прогноз",
+        cell: ({ row }) => isoToRuDate(row.original.forecastDate),
+      },
+      {
+        id: "variance",
+        header: "Отклонение",
+        cell: ({ row }) => (
+          <Badge
+            className={cn(
+              "min-w-0 max-w-full shrink truncate border-0",
+              deviationBadgeClass(row.original.varianceDays)
+            )}
+          >
+            {deviationLabel(row.original.varianceDays)}
+          </Badge>
+        ),
+      },
+      {
+        id: "owner",
+        header: "Ответственный",
+        cell: ({ row }) => (
+          <Badge
+            variant="outline"
+            className="inline-flex h-8 max-w-full min-w-0 shrink items-center gap-2 rounded-full pl-0.5 pr-2 font-medium"
+          >
+            <Avatar size="default" className="size-7 shrink-0">
+              <AvatarFallback>{getInitials(row.original.owner)}</AvatarFallback>
+            </Avatar>
+            <span className="min-w-0 truncate leading-none">{row.original.owner}</span>
+          </Badge>
+        ),
+      },
+      {
+        id: "blocker",
+        header: "Блокер",
+        cell: ({ row }) => (
+          <span className="block truncate" title={row.original.blocker ?? undefined}>
+            {truncateBlocker(row.original.blocker)}
+          </span>
+        ),
+      },
+    ],
+    []
+  )
+
+  const table = useReactTable({
+    data: filtered,
+    columns: planColumns,
+    state: { pagination },
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getRowId: (row) => row.id,
+  })
+
+  const autoPageSize = useAutoPageSize(tableContainerRef, firstRowRef, {
+    measureFromContainerHeight: true,
+    remeasureKey: `${table.getRowModel().rows.length}-${pagination.pageIndex}-${filtered.length}`,
+  })
+
+  React.useEffect(() => {
+    setPagination((prev) => ({ ...prev, pageSize: autoPageSize }))
+  }, [autoPageSize])
+
+  const isFirstFiltersLayout = React.useRef(true)
+  const prevFiltersSerializedRef = React.useRef(JSON.stringify(INITIAL_PLAN_FILTERS))
+  const ignoreUrlPageWhileStaleAfterFilterRef = React.useRef(false)
+
+  // Сначала подтягиваем page из адреса (layout), иначе эффект state→URL успевает сбросить ?page при «Назад в План»
+  React.useLayoutEffect(() => {
+    const serialized = JSON.stringify(filters)
+
+    if (isFirstFiltersLayout.current) {
+      isFirstFiltersLayout.current = false
+      prevFiltersSerializedRef.current = serialized
+      const p = readPageIndexFromSearchParams(searchParams)
+      setPagination((prev) => {
+        if (prev.pageIndex === p) return prev
+        if (prev.pageIndex > p) return prev
+        return { ...prev, pageIndex: p }
+      })
+      return
+    }
+
+    if (serialized !== prevFiltersSerializedRef.current) {
+      prevFiltersSerializedRef.current = serialized
+      ignoreUrlPageWhileStaleAfterFilterRef.current = true
+      setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete("page")
+      const qs = params.toString()
+      if (qs !== searchParams.toString()) {
+        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+      }
+      return
+    }
+
+    if (ignoreUrlPageWhileStaleAfterFilterRef.current) {
+      if (searchParams.get("page")) return
+      ignoreUrlPageWhileStaleAfterFilterRef.current = false
+    }
+
+    const p = readPageIndexFromSearchParams(searchParams)
+    setPagination((prev) => {
+      if (prev.pageIndex === p) return prev
+      if (prev.pageIndex > p) return prev
+      return { ...prev, pageIndex: p }
+    })
+  }, [searchParams, filters, pathname, router])
+
+  // Режим «Таблица / Календарь» из адреса (перезагрузка, назад/вперёд)
+  React.useEffect(() => {
+    const v = readViewFromSearchParams(searchParams)
+    setView((prev) => (prev === v ? prev : v))
+  }, [searchParams])
+
+  // Номер страницы и view → query (перезагрузка сохраняет page и view)
+  React.useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString())
+    const oneBased = pagination.pageIndex + 1
+    if (oneBased <= 1) params.delete("page")
+    else params.set("page", String(oneBased))
+
+    if (view === "calendar") params.set("view", "calendar")
+    else params.delete("view")
+
+    const qs = params.toString()
+    if (qs === searchParams.toString()) return
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }, [pagination.pageIndex, view, pathname, router, searchParams])
+
+  const pageCount = table.getPageCount()
+  React.useEffect(() => {
+    if (pageCount === 0) return
+    setPagination((prev) => {
+      if (prev.pageIndex < pageCount) return prev
+      return { ...prev, pageIndex: Math.max(0, pageCount - 1) }
+    })
+  }, [pageCount])
+
   const kpi = React.useMemo(() => computePlanKpi(filtered), [filtered])
   const events = React.useMemo(() => toCalendarEvents(filtered), [filtered])
   const eventsByDate = React.useMemo(() => groupEventsByDate(events), [events])
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 lg:p-6">
       <Card>
         <CardHeader className="gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <CardTitle>План</CardTitle>
-              <CardDescription>
-                Производство и монтаж домокомплектов: контроль, планирование, решения.
-              </CardDescription>
-            </div>
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <Tabs value={view} onValueChange={(value) => setView(value as ViewMode)}>
               <TabsList>
                 <TabsTrigger value="table">Таблица</TabsTrigger>
@@ -407,114 +649,160 @@ export function PlanScreen() {
         </CardHeader>
       </Card>
 
-      <div className="grid flex-1 gap-4">
-        <Card className="min-h-[520px] py-0">
-          <CardContent className="p-0">
-            <Tabs value={view} onValueChange={(value) => setView(value as ViewMode)}>
-              <TabsContent value="table" className="m-0 p-0">
-                <Table className="table-fixed min-w-6xl">
-                  <PlanTableColgroup />
-                  <TableHeader className="bg-transparent">
-                    <TableRow className="h-auto bg-transparent hover:bg-transparent">
-                      <TableHead className="text-muted-foreground">Дом</TableHead>
-                      <TableHead className="text-muted-foreground">Этап</TableHead>
-                      <TableHead className="text-muted-foreground">Статус</TableHead>
-                      <TableHead className="text-muted-foreground">План</TableHead>
-                      <TableHead className="text-muted-foreground">Факт</TableHead>
-                      <TableHead className="text-muted-foreground">Прогноз</TableHead>
-                      <TableHead className="text-muted-foreground">Отклонение</TableHead>
-                      <TableHead className="text-muted-foreground">Ответственный</TableHead>
-                      <TableHead className="text-muted-foreground">Блокер</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filtered.map((item) => (
-                      <TableRow
-                        key={item.id}
-                        data-state={item.id === selectedTaskId ? "selected" : undefined}
-                        onClick={() => {
-                          setSelectedTaskId(item.id)
-                          router.push(`/object/${item.serialNumber}`)
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault()
-                            setSelectedTaskId(item.id)
-                            router.push(`/object/${item.serialNumber}`)
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
+        <Card className="flex min-h-[520px] flex-1 flex-col overflow-hidden py-0">
+          <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+            <Tabs
+              value={view}
+              onValueChange={(value) => setView(value as ViewMode)}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <TabsContent
+                value="table"
+                className="m-0 flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0"
+              >
+                <div
+                  ref={tableContainerRef}
+                  className="min-h-0 min-w-0 flex-1 overflow-auto"
+                >
+                  <Table className="table-fixed min-w-6xl">
+                    <PlanTableColgroup />
+                    <TableHeader className="sticky top-0 z-10 bg-muted [&_tr]:border-border">
+                      {table.getHeaderGroups().map((headerGroup) => (
+                        <TableRow
+                          key={headerGroup.id}
+                          className="h-14 border-border bg-muted hover:bg-muted data-[state=selected]:bg-muted"
+                        >
+                          {headerGroup.headers.map((header) => (
+                            <TableHead
+                              key={header.id}
+                              className="h-14 py-0 align-middle text-muted-foreground"
+                            >
+                              {header.isPlaceholder
+                                ? null
+                                : flexRender(
+                                    header.column.columnDef.header,
+                                    header.getContext()
+                                  )}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableHeader>
+                    <TableBody>
+                      {table.getRowModel().rows?.length ? (
+                        table.getRowModel().rows.map((row, index) => (
+                          <TableRow
+                            key={row.id}
+                            ref={index === 0 ? firstRowRef : undefined}
+                            onClick={() => {
+                              openObject(row.original.serialNumber)
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault()
+                                openObject(row.original.serialNumber)
+                              }
+                            }}
+                            tabIndex={0}
+                            role="link"
+                            className="cursor-pointer"
+                          >
+                            {row.getVisibleCells().map((cell) => (
+                              <TableCell
+                                key={cell.id}
+                                className={cn(
+                                  "min-w-0",
+                                  cell.column.id === "home" && "font-medium"
+                                )}
+                              >
+                                {flexRender(
+                                  cell.column.columnDef.cell,
+                                  cell.getContext()
+                                )}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={planColumns.length}
+                            className="h-24 text-center"
+                          >
+                            Нет данных.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="flex h-14 min-h-14 shrink-0 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 bg-muted px-3">
+                  <p className="text-sm font-medium tabular-nums">
+                    Страница {table.getState().pagination.pageIndex + 1} из{" "}
+                    {table.getPageCount()}
+                  </p>
+                  <Pagination className="mx-0 w-auto sm:ml-auto">
+                    <PaginationContent className="flex-wrap justify-end gap-1">
+                      <PaginationItem>
+                        <Button
+                          variant="outline"
+                          className="hidden size-8 p-0 lg:inline-flex"
+                          size="icon"
+                          onClick={() => table.setPageIndex(0)}
+                          disabled={!table.getCanPreviousPage()}
+                        >
+                          <span className="sr-only">Первая страница</span>
+                          <IconChevronsLeft />
+                        </Button>
+                      </PaginationItem>
+                      <PaginationItem>
+                        <Button
+                          variant="outline"
+                          className="size-8"
+                          size="icon"
+                          onClick={() => table.previousPage()}
+                          disabled={!table.getCanPreviousPage()}
+                        >
+                          <span className="sr-only">Предыдущая страница</span>
+                          <IconChevronLeft />
+                        </Button>
+                      </PaginationItem>
+                      <PaginationItem>
+                        <Button
+                          variant="outline"
+                          className="size-8"
+                          size="icon"
+                          onClick={() => table.nextPage()}
+                          disabled={!table.getCanNextPage()}
+                        >
+                          <span className="sr-only">Следующая страница</span>
+                          <IconChevronRight />
+                        </Button>
+                      </PaginationItem>
+                      <PaginationItem>
+                        <Button
+                          variant="outline"
+                          className="hidden size-8 lg:inline-flex"
+                          size="icon"
+                          onClick={() =>
+                            table.setPageIndex(Math.max(0, table.getPageCount() - 1))
                           }
-                        }}
-                        tabIndex={0}
-                        role="link"
-                        className="cursor-pointer"
-                      >
-                        <TableCell className="min-w-0 font-medium">
-                          <div className="truncate whitespace-nowrap">{`${item.contractNumber} - ${item.serialNumber} дом`}</div>
-                          <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden">
-                            <Badge
-                              className={cn(
-                                "h-6 px-2 font-mono tracking-tight",
-                                houseKitBadgeClass(item.houseKitType)
-                              )}
-                            >
-                              {HOUSE_KIT_LABEL[item.houseKitType]}
-                            </Badge>
-                            <Badge
-                              className={cn(
-                                "h-6 min-w-0 max-w-42 truncate px-2 font-mono tracking-tight",
-                                projectBadgeClass(item.projectName)
-                              )}
-                            >
-                              {item.projectName}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell className="min-w-0">
-                          <Badge
-                            className={cn(
-                              "h-6 min-w-0 max-w-full shrink justify-start truncate px-2 text-xs font-medium",
-                              stageBadgeClass(item.stage)
-                            )}
-                          >
-                            {item.stage}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="min-w-0">
-                          <PlanStatusPill status={item.status} />
-                        </TableCell>
-                        <TableCell className="min-w-0">{isoToRuDate(item.planDate)}</TableCell>
-                        <TableCell className="min-w-0">{item.factDate ? isoToRuDate(item.factDate) : "-"}</TableCell>
-                        <TableCell className="min-w-0">{isoToRuDate(item.forecastDate)}</TableCell>
-                        <TableCell className="min-w-0">
-                          <Badge
-                            className={cn(
-                              "min-w-0 max-w-full shrink truncate border-0",
-                              deviationBadgeClass(item.varianceDays)
-                            )}
-                          >
-                            {deviationLabel(item.varianceDays)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="min-w-0">
-                          <Badge
-                            variant="outline"
-                            className="inline-flex h-8 max-w-full min-w-0 shrink items-center gap-2 rounded-full pl-0.5 pr-2 font-medium"
-                          >
-                            <Avatar size="default" className="size-7 shrink-0">
-                              <AvatarFallback>{getInitials(item.owner)}</AvatarFallback>
-                            </Avatar>
-                            <span className="min-w-0 truncate leading-none">{item.owner}</span>
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="min-w-0" title={item.blocker ?? undefined}>
-                          <span className="block truncate">{truncateBlocker(item.blocker)}</span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                          disabled={!table.getCanNextPage()}
+                        >
+                          <span className="sr-only">Последняя страница</span>
+                          <IconChevronsRight />
+                        </Button>
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
               </TabsContent>
 
-              <TabsContent value="calendar" className="m-0 p-3">
+              <TabsContent
+                value="calendar"
+                className="m-0 flex min-h-0 flex-1 flex-col overflow-auto p-3"
+              >
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {Object.entries(eventsByDate)
                     .sort(([a], [b]) => a.localeCompare(b))
@@ -526,13 +814,14 @@ export function PlanScreen() {
                             <button
                               key={event.id}
                               type="button"
-                              onClick={() => setSelectedTaskId(event.id.replace("event-", ""))}
+                              onClick={() => openObject(event.serialNumber)}
                               className="w-full cursor-pointer rounded-md border p-2 text-left hover:bg-muted/50"
                             >
                               <p className="text-sm font-medium">{event.title}</p>
                               <div className="mt-1 flex flex-wrap gap-1">
                                 <Badge variant="outline">{event.serialNumber}</Badge>
                                 <Badge
+                                  title={formatHouseKitFullLabel(event.houseKitType)}
                                   className={cn(
                                     "font-mono tracking-tight",
                                     houseKitBadgeClass(event.houseKitType)

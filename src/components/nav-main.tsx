@@ -22,6 +22,7 @@ export function NavMain({
   }[]
 }) {
   const pathname = usePathname()
+  const isPlanActive = pathname === "/" || pathname.startsWith("/object/")
 
   return (
     <SidebarGroup>
@@ -31,7 +32,7 @@ export function NavMain({
             <SidebarMenuButton
               render={<Link href="/" />}
               tooltip="План"
-              isActive={pathname === "/"}
+              isActive={isPlanActive}
               className="min-w-8 duration-200 ease-linear"
             >
               <IconCalendar />

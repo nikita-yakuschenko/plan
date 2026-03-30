@@ -1,6 +1,8 @@
-import Link from "next/link"
-
 import { ObjectCard } from "@/components/object/object-card"
+import { ReturnToPlanLink } from "@/components/object/return-to-plan-link"
+import { SiteHeader } from "@/components/site-header"
+import { Separator } from "@/components/ui/separator"
+import { formatObjectHeaderTitle } from "@/lib/plan-data"
 
 type PageProps = {
   params: Promise<{ id: string }>
@@ -8,26 +10,29 @@ type PageProps = {
 
 export default async function ObjectPage({ params }: PageProps) {
   const { id } = await params
-  const titleId = id
+  const headerTitle = formatObjectHeaderTitle(id)
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 lg:p-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Карточка домокомплекта {titleId}</h1>
-          <p className="text-sm text-muted-foreground">
-            Детальный режим объекта: таймлайн, зависимости и анализ отклонений.
-          </p>
-        </div>
-        <Link
-          href="/"
-          className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-2.5 text-sm font-medium transition-colors hover:bg-muted"
-        >
-          Назад в План
-        </Link>
+    <>
+      <SiteHeader
+        title={
+          <>
+            <ReturnToPlanLink objectId={id}>Назад в план</ReturnToPlanLink>
+            <Separator
+              orientation="vertical"
+              className="h-4 shrink-0 data-vertical:self-auto"
+            />
+            <h1 className="truncate text-base font-semibold text-foreground">
+              {headerTitle}
+            </h1>
+          </>
+        }
+      />
+      {/* Высота под хедером: правая панель и левая колонка делят flex-1; скролл только у колонок, не у всей страницы */}
+      {/* Справа чуть больше воздуха до края inset (и до скроллбара), чем слева */}
+      <div className="flex min-h-0 flex-1 flex-col p-4 lg:p-6 lg:pr-10">
+        <ObjectCard serialNumber={id} />
       </div>
-
-      <ObjectCard serialNumber={titleId} />
-    </main>
+    </>
   )
 }

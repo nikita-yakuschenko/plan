@@ -6,6 +6,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from "@/components/ui/sidebar"
 
 export function NavDocuments({
@@ -18,12 +19,18 @@ export function NavDocuments({
   }[]
 }) {
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>Документы</SidebarGroupLabel>
+    <SidebarGroup>
+      <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">
+        Документы
+      </SidebarGroupLabel>
+      <SidebarSeparator className="hidden group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:my-1 group-data-[collapsible=icon]:block group-data-[collapsible=icon]:w-8" />
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
-            <SidebarMenuButton render={<a href={item.url} />}>
+            <SidebarMenuButton
+              render={<a href={item.url} />}
+              tooltip={item.name}
+            >
               {item.icon}
               <span>{item.name}</span>
             </SidebarMenuButton>

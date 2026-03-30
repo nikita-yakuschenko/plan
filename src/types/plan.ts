@@ -15,6 +15,15 @@ export interface PlanDataMeta {
   trust: DataTrust
 }
 
+/** Метаданные для шапки карточки объекта (концепт: название, площадь, регион). */
+export interface PlanObjectCardMeta {
+  displayTitle: string
+  areaM2: number
+  /** Подпись типа дома (по полю `houseKitType`: ПКД/МД). */
+  kitLabel: string
+  region: string
+}
+
 export interface PlanTask {
   id: string
   serialNumber: string
@@ -22,6 +31,8 @@ export interface PlanTask {
   houseKitType: HouseKitType
   projectId: string
   projectName: string
+  /** Заголовок карточки, площадь, комплектация, регион */
+  objectCardMeta: PlanObjectCardMeta
   type: WorkType
   stage: string
   status: PlanStatus
@@ -84,4 +95,34 @@ export interface PlanKpi {
   blockedCount: number
   criticalCount: number
   staleCount: number
+}
+
+/** Событие внутри этапа пайплайна (один статус — много событий, в т.ч. триггерные). */
+export type PipelineTimelineEventKind = "trigger" | "normal"
+
+export interface PipelineTimelineEvent {
+  id: string
+  label: string
+  kind: PipelineTimelineEventKind
+}
+
+/** Один перевозчик / одно ТС в рейсе (может быть N штук на один домокомплект). */
+export interface PipelineTimelineCarrier {
+  id: string
+  /** Юрлицо или ИП */
+  name: string
+  inn?: string
+  /** Заявки, контакты, ТС, ограничения, документы по этому рейсу */
+  items: PipelineTimelineEvent[]
+}
+
+/** Группа «подэтап» внутри текущего этапа (например Комплектация → пункты, Логистика → пункты). */
+export interface PipelineTimelineSection {
+  id: string
+  /** Пустая строка — без заголовка группы, плоский список. */
+  title: string
+  /** Общие строки подэтапа (вводные или без разбивки по перевозчикам). */
+  items: PipelineTimelineEvent[]
+  /** Несколько перевозчиков: столько блоков, сколько рейсов/ТС в данных. */
+  carriers?: PipelineTimelineCarrier[]
 }

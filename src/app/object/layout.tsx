@@ -1,12 +1,10 @@
-import { Suspense } from "react"
+import type { CSSProperties, ReactNode } from "react"
 
 import { AppSidebar } from "@/components/app-sidebar"
-import { PlanScreen } from "@/components/plan/plan-screen"
-import { SiteHeader } from "@/components/site-header"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { getSidebarDefaultOpen } from "@/lib/sidebar-cookie"
 
-export default async function Home() {
+export default async function ObjectLayout({ children }: { children: ReactNode }) {
   const defaultOpen = await getSidebarDefaultOpen()
 
   return (
@@ -16,16 +14,11 @@ export default async function Home() {
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
           "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+        } as CSSProperties
       }
     >
       <AppSidebar variant="inset" />
-      <SidebarInset className="min-h-0">
-        <SiteHeader title="План" />
-        <Suspense fallback={<div className="min-h-0 flex-1 bg-background" />}>
-          <PlanScreen />
-        </Suspense>
-      </SidebarInset>
+      <SidebarInset className="min-h-0">{children}</SidebarInset>
     </SidebarProvider>
   )
 }

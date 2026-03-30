@@ -14,7 +14,8 @@ function Separator({
       data-slot="separator"
       orientation={orientation}
       className={cn(
-        "shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch",
+        // vertical: без self-stretch — иначе в flex-строке линия тянется на всю высоту шапки; высоту задаём h-* у потребителя
+        "shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-auto",
         className
       )}
       {...props}

@@ -20,6 +20,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   IconDotsVertical,
   IconUserCircle,
@@ -37,28 +38,39 @@ export function NavUser({
     avatar: string
   }
 }) {
-  const { isMobile } = useSidebar()
+  const { isMobile, state } = useSidebar()
+  const showCollapsedTooltip = state === "collapsed" && !isMobile
+
   return (
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <SidebarMenuButton size="lg" className="aria-expanded:bg-muted" />
-            }
-          >
-            <Avatar className="size-8 rounded-lg grayscale">
-              <AvatarImage src={user.avatar} alt={user.name} />
-              <AvatarFallback className="rounded-lg">CN</AvatarFallback>
-            </Avatar>
-            <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">{user.name}</span>
-              <span className="truncate text-xs text-foreground/70">
-                {user.email}
-              </span>
-            </div>
-            <IconDotsVertical className="ml-auto size-4" />
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <DropdownMenuTrigger
+                  render={
+                    <SidebarMenuButton size="lg" className="aria-expanded:bg-muted" />
+                  }
+                >
+                  <Avatar className="size-8 rounded-lg grayscale">
+                    <AvatarImage src={user.avatar} alt={user.name} />
+                    <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+                  </Avatar>
+                  <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
+                    <span className="truncate font-medium">{user.name}</span>
+                    <span className="truncate text-xs text-foreground/70">
+                      {user.email}
+                    </span>
+                  </div>
+                  <IconDotsVertical className="ml-auto size-4 group-data-[collapsible=icon]:hidden" />
+                </DropdownMenuTrigger>
+              }
+            />
+            <TooltipContent side="right" align="center" hidden={!showCollapsedTooltip}>
+              {user.name}
+            </TooltipContent>
+          </Tooltip>
           <DropdownMenuContent
             className="min-w-56"
             side={isMobile ? "bottom" : "right"}

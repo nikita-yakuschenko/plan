@@ -155,13 +155,14 @@ const data = {
 }
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
+    <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[slot=sidebar-menu-button]:p-1.5!"
               render={<Link href="/" />}
+              tooltip="Модуль.План"
             >
               <IconCommand className="size-5!" />
               <span className="text-base font-semibold">Модуль.План</span>

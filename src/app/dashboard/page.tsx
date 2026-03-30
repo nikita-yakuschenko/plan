@@ -2,10 +2,14 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { getSidebarDefaultOpen } from "@/lib/sidebar-cookie"
 
-export default function Page() {
+export default async function Page() {
+  const defaultOpen = await getSidebarDefaultOpen()
+
   return (
     <SidebarProvider
+      defaultOpen={defaultOpen}
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
